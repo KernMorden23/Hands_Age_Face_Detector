@@ -17,6 +17,11 @@ const PALM_TRIANGLES = [[0, 5, 9], [0, 9, 13], [0, 13, 17]];
 const WORLD_SCALE = 30.0;
 const TOTAL_PARTICLES = 25000;
 
+// STATE MANAGEMENT FOR FACES
+// Stores samples for averaging: { 0: [25, 26, 25...], 1: [...] }
+const faceSamples = {}; 
+const MAX_SAMPLES = 20; // How many frames to wait before being "Sure"
+
 let isDisintegrating = false;
 let indexFingerTip = new THREE.Vector3(999, 999, 999);
 let frameCounter = 0;
@@ -122,13 +127,12 @@ hands.onResults((results) => {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
+    // Draw Face Skeleton (Wireframe)
     if (lastFaceResults && lastFaceResults.multiFaceLandmarks) {
         for (const landmarks of lastFaceResults.multiFaceLandmarks) {
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_RIGHT_EYE, {color: '#00FFFF', lineWidth: 2});
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_LEFT_EYE, {color: '#00FFFF', lineWidth: 2});
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_LIPS, {color: '#FF0055', lineWidth: 2});
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_FACE_OVAL, {color: '#E0E0E0', lineWidth: 1});
+            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_TESSELATION, {color: '#C0C0C040', lineWidth: 0.5});
+            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_RIGHT_EYE, {color: '#00FFFF', lineWidth: 1});
+            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_LEFT_EYE, {color: '#00FFFF', lineWidth: 1});
         }
     }
 
@@ -220,7 +224,7 @@ async function startCamera() {
         video.onloadeddata = () => {
             canvasElement.width = video.videoWidth;
             canvasElement.height = video.videoHeight;
-            log("System Online. Skeleton Tracking Active.");
+            log("System Online.");
             loop();
         };
     } catch (err) { log("Error: " + err.message); }
@@ -230,6 +234,8 @@ async function loop() {
     if (video.readyState >= 2) {
         await hands.send({ image: video });
         await faceMesh.send({ image: video });
+        
+        // Face Detection (Run every 5 frames for speed)
         frameCounter++;
         if (frameCounter % 5 === 0) detectFaceAttributes();
     }
@@ -240,30 +246,53 @@ async function detectFaceAttributes() {
     const displaySize = { width: 320, height: 240 };
     const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 });
     const detections = await faceapi.detectAllFaces(video, options).withAgeAndGender();
+    
+    // Clear old HUD elements that aren't being updated
+    // (In a production app we would diff them, but clearing innerHTML is acceptable for this prototype)
     hudContainer.innerHTML = '';
 
     if (detections && detections.length > 0) {
         const resizedDetections = faceapi.resizeResults(detections, displaySize);
-        resizedDetections.forEach(detection => {
-            const { age, gender, genderProbability } = detection;
+        
+        resizedDetections.forEach((detection, index) => {
+            const { age, gender } = detection;
             const box = detection.detection.box;
             const mirroredX = displaySize.width - (box.x + box.width);
             
+            // --- AGE AVERAGING LOGIC ---
+            if (!faceSamples[index]) faceSamples[index] = [];
+            
+            // Add current age to samples
+            faceSamples[index].push(age);
+            if (faceSamples[index].length > MAX_SAMPLES) faceSamples[index].shift();
+
+            const samples = faceSamples[index];
+            const avgAge = samples.reduce((a, b) => a + b, 0) / samples.length;
+            const isSure = samples.length >= MAX_SAMPLES;
+            
+            // --- CREATE LABEL ---
             const label = document.createElement('div');
             label.className = 'face-label';
             label.style.left = `${Math.max(0, mirroredX)}px`;
-            label.style.top = `${Math.max(0, box.y - 35)}px`;
+            label.style.top = `${Math.max(0, box.y - 40)}px`;
             
-            const ageInt = Math.round(age);
-            const genderStr = genderProbability > 0.6 ? gender.toUpperCase() : "SCAN";
-            label.innerHTML = `${genderStr} [${ageInt}]`;
-            const color = gender === 'male' ? '#00aaff' : '#ff00aa';
-            label.style.borderColor = color;
-            label.style.color = color;
-            label.style.boxShadow = `0 0 5px ${color}`;
+            if (!isSure) {
+                // SCANNING MODE
+                label.classList.add('state-scanning');
+                label.innerHTML = `SCANNING... ${(samples.length / MAX_SAMPLES * 100).toFixed(0)}%`;
+            } else {
+                // LOCKED MODE
+                label.classList.add('state-locked');
+                const ageInt = Math.round(avgAge);
+                const genderStr = gender.toUpperCase();
+                label.innerHTML = `ID VERIFIED<br>AGE: ~${ageInt} | ${genderStr}`;
+            }
 
             hudContainer.appendChild(label);
         });
+    } else {
+        // Reset samples if no faces found
+        for (let key in faceSamples) delete faceSamples[key];
     }
 }
 

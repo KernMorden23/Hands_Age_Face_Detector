@@ -36,15 +36,39 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courie
     pointer-events: none; z-index: 20;
 }
 
+/* Base style for the face box */
 .face-label {
     position: absolute; 
-    border: 1px solid rgba(0, 255, 255, 0.6);
-    background: rgba(0, 20, 20, 0.8);
-    color: #00ffff;
-    padding: 3px 6px; font-size: 10px; font-weight: bold;
+    border-width: 2px;
+    border-style: solid;
+    padding: 4px 8px; 
+    font-size: 11px; 
+    font-weight: bold;
     white-space: nowrap;
-    border-radius: 2px;
-    box-shadow: 0 0 8px rgba(0, 255, 255, 0.2);
+    border-radius: 4px;
     transform: scaleX(1); 
-    transition: left 0.1s, top 0.1s;
+    transition: all 0.2s ease-out;
+}
+
+/* State: Scanning (Orange/Blinking) */
+.state-scanning {
+    border-color: #ffaa00;
+    color: #ffaa00;
+    background: rgba(40, 20, 0, 0.6);
+    box-shadow: 0 0 10px rgba(255, 170, 0, 0.4);
+    animation: pulseBorder 1s infinite;
+}
+
+/* State: Locked/Sure (Cyan/Solid) */
+.state-locked {
+    border-color: #00ffff;
+    color: #00ffff;
+    background: rgba(0, 40, 40, 0.8);
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
+}
+
+@keyframes pulseBorder {
+    0% { opacity: 0.8; }
+    50% { opacity: 0.4; }
+    100% { opacity: 0.8; }
 }
