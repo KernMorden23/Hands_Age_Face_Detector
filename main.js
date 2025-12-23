@@ -1,39 +1,50 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Pane } from 'tweakpane';
+import { Database } from './db.js';
 
 const statusEl = document.getElementById('status');
+const terminalContent = document.getElementById('terminal-content');
 const hudContainer = document.getElementById('hud-container');
+const vitalsPanel = document.getElementById('vitals-panel');
+const bpmEl = document.getElementById('bpm-val');
+const o2El = document.getElementById('o2-val');
+const stressEl = document.getElementById('stress-val');
+const ecgCanvas = document.getElementById('ecg-canvas');
+const ecgCtx = ecgCanvas.getContext('2d');
 const recBtn = document.getElementById('rec-btn');
 const modal = document.getElementById('reg-modal');
 const nameInput = document.getElementById('subject-name');
 const consentCheck = document.getElementById('consent-check');
 const saveBtn = document.getElementById('save-btn');
 const cancelBtn = document.getElementById('cancel-btn');
+
+// LOGGER
 const log = (msg) => { statusEl.innerText = msg; };
+const sqlLog = (cmd) => {
+    const line = document.createElement('div');
+    line.className = 'sql-line';
+    let html = cmd.replace(/(SELECT|FROM|WHERE|INSERT|INTO|VALUES|CREATE|TABLE|IF|NOT|EXISTS)/g, '<span class="sql-keyword">$1</span>');
+    html = html.replace(/('[^']+')/g, '<span class="sql-value">$1</span>');
+    line.innerHTML = html;
+    terminalContent.appendChild(line);
+    if (terminalContent.children.length > 8) terminalContent.removeChild(terminalContent.firstChild);
+};
 
 // CONFIG
-const WORLD_SCALE = 30.0;
-const TOTAL_PARTICLES = 35000;
-const FINGER_BONES = [
-    [0, 1], [1, 2], [2, 3], [3, 4],
-    [0, 5], [5, 6], [6, 7], [7, 8],
-    [0, 9], [9, 10], [10, 11], [11, 12],
-    [0, 13], [13, 14], [14, 15], [15, 16],
-    [0, 17], [17, 18], [18, 19], [19, 20]
-];
-const PALM_TRIANGLES = [[0, 5, 9], [0, 9, 13], [0, 13, 17]];
+const TOTAL_PARTICLES = 40000; // Increased for density
+const FINGER_BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
+const PALM_TRIANGLES = [[0, 5, 9], [0, 9, 13], [0, 13, 17]]; // Restored Palm Logic
 const FINGERTIPS = [4, 8, 12, 16, 20];
 
 // STATE
-let isDisintegrating = false;
-let indexFingerTip = new THREE.Vector3(999, 999, 999);
-let frameCounter = 0;
+let knownFaces = Database.getAll();
 let faceMatcher = null;
 let currentFaceDescriptor = null;
-let knownFaces = JSON.parse(localStorage.getItem('biometricDB')) || [];
-let activeColor = { hex: '#00ffff' }; // Track current system color
+let activeColor = { hex: '#00ffff' };
+let currentBPM = 75;
 
+// INIT
+sqlLog("CREATE TABLE IF NOT EXISTS subjects (id INT, label VARCHAR, descriptor BLOB)");
 log(`System Ready. Records: ${knownFaces.length}`);
 
 // THREE.JS
@@ -60,7 +71,6 @@ const targetPositions = new Float32Array(TOTAL_PARTICLES * 3);
 const randoms = new Float32Array(TOTAL_PARTICLES * 3);
 const visibility = new Float32Array(TOTAL_PARTICLES);
 const targetVisibility = new Float32Array(TOTAL_PARTICLES);
-
 for (let i = 0; i < TOTAL_PARTICLES; i++) {
     positions[i*3]=0; positions[i*3+1]=0; positions[i*3+2]=0;
     targetPositions[i*3]=0; targetPositions[i*3+1]=0; targetPositions[i*3+2]=0;
@@ -68,141 +78,132 @@ for (let i = 0; i < TOTAL_PARTICLES; i++) {
     visibility[i]=0.0; targetVisibility[i]=0.0;
 }
 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 3));
 geometry.setAttribute('aVisible', new THREE.BufferAttribute(visibility, 1));
+geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 3));
 
 const material = new THREE.ShaderMaterial({
     vertexShader: `
-        uniform float uTime;
-        uniform vec3 uColor;
-        attribute float aVisible;
-        attribute vec3 aRandom;
-        varying float vAlpha;
-        varying vec3 vColor;
+        uniform float uTime; uniform vec3 uColor; attribute float aVisible; attribute vec3 aRandom; varying vec3 vColor; varying float vAlpha;
         void main() {
-            vec3 pos = position;
-            pos += sin(uTime * 5.0 + aRandom.x * 20.0) * 0.05;
+            vec3 pos = position + sin(uTime * 5.0 + aRandom.x * 20.0) * 0.05;
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-            gl_PointSize = (40.0 * aVisible) / -mvPosition.z;
+            // Increased size from 40.0 to 65.0 for better visibility
+            gl_PointSize = (65.0 * aVisible) / -mvPosition.z;
             gl_Position = projectionMatrix * mvPosition;
-            vColor = uColor;
-            vAlpha = aVisible;
+            vColor = uColor; vAlpha = aVisible;
         }
     `,
-    fragmentShader: `
-        varying float vAlpha;
-        varying vec3 vColor;
-        void main() {
-            if (vAlpha < 0.05) discard;
-            vec2 cxy = 2.0 * gl_PointCoord - 1.0;
-            if (dot(cxy, cxy) > 1.0) discard;
-            gl_FragColor = vec4(vColor, vAlpha);
-        }
-    `,
+    fragmentShader: `varying float vAlpha; varying vec3 vColor; void main() { if (vAlpha < 0.05) discard; if (distance(gl_PointCoord, vec2(0.5)) > 0.5) discard; gl_FragColor = vec4(vColor, vAlpha); }`,
     uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0.0, 1.0, 0.8) } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
 });
 const particles = new THREE.Points(geometry, material);
 scene.add(particles);
 
-// AI SETUP
+// AI
 const hands = new window.Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 const faceMesh = new window.FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
 hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6 });
 faceMesh.setOptions({ maxNumFaces: 3, refinerLandmarks: true, minDetectionConfidence: 0.6 });
 
-const mapCoord = (l) => new THREE.Vector3((l.x - 0.5) * -WORLD_SCALE, -(l.y - 0.5) * WORLD_SCALE, l.z * WORLD_SCALE);
+const mapCoord = (l) => new THREE.Vector3((l.x - 0.5) * -30.0, -(l.y - 0.5) * 30.0, l.z * 30.0);
 const lerpVec3 = (v1, v2, a) => new THREE.Vector3().copy(v1).lerp(v2, a);
 const canvasElement = document.getElementById('output-canvas');
 const canvasCtx = canvasElement.getContext('2d');
-
 let lastFaceResults = null;
 
-// HAND LOGIC
+// HANDS
 hands.onResults((results) => {
-    // 1. DRAW SKELETON ON WEBCAM
-    canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    
-    // Draw Face first (from stored results)
+    canvasCtx.save(); canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     if (lastFaceResults && lastFaceResults.multiFaceLandmarks) {
-        for (const landmarks of lastFaceResults.multiFaceLandmarks) {
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_TESSELATION, {color: '#FFFFFF20', lineWidth: 0.5});
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_RIGHT_EYE, {color: activeColor.hex, lineWidth: 1});
-            window.drawConnectors(canvasCtx, landmarks, window.FACEMESH_LEFT_EYE, {color: activeColor.hex, lineWidth: 1});
-        }
+        lastFaceResults.multiFaceLandmarks.forEach(lm => {
+            window.drawConnectors(canvasCtx, lm, window.FACEMESH_TESSELATION, {color: '#FFFFFF20', lineWidth: 0.5});
+            window.drawConnectors(canvasCtx, lm, window.FACEMESH_RIGHT_EYE, {color: activeColor.hex, lineWidth: 1});
+            window.drawConnectors(canvasCtx, lm, window.FACEMESH_LEFT_EYE, {color: activeColor.hex, lineWidth: 1});
+        });
     }
-    
-    // Draw Hands
     if (results.multiHandLandmarks) {
-        for (const landmarks of results.multiHandLandmarks) {
-            window.drawConnectors(canvasCtx, landmarks, window.HAND_CONNECTIONS, {color: activeColor.hex, lineWidth: 2});
-            window.drawLandmarks(canvasCtx, landmarks, {color: '#FFFFFF', lineWidth: 1, radius: 2});
-        }
+        results.multiHandLandmarks.forEach(lm => window.drawConnectors(canvasCtx, lm, window.HAND_CONNECTIONS, {color: activeColor.hex, lineWidth: 2}));
     }
 
-    // 2. PARTICLE SYSTEM
     if (results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0];
-        const thumb = landmarks[4];
-        const index = landmarks[8];
-        const pinch = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-        
-        // COLOR LOGIC
-        if (pinch < 0.08) {
-             material.uniforms.uColor.value.lerp(new THREE.Color(1.0, 0.2, 0.0), 0.1);
-             activeColor.hex = '#FF3300';
-        } else {
-             material.uniforms.uColor.value.lerp(new THREE.Color(0.0, 1.0, 0.8), 0.1);
-             activeColor.hex = '#00FFFF';
-        }
-        
-        indexFingerTip.copy(mapCoord(index));
+        const pinch = Math.hypot(results.multiHandLandmarks[0][4].x - results.multiHandLandmarks[0][8].x, results.multiHandLandmarks[0][4].y - results.multiHandLandmarks[0][8].y);
+        if (pinch < 0.08) { material.uniforms.uColor.value.lerp(new THREE.Color(1.0, 0.2, 0.0), 0.1); activeColor.hex = '#FF3300'; }
+        else { material.uniforms.uColor.value.lerp(new THREE.Color(0.0, 1.0, 0.8), 0.1); activeColor.hex = '#00FFFF'; }
 
         let pIdx = 0;
-        const handCount = results.multiHandLandmarks.length;
-        const particlesPerHand = Math.floor(TOTAL_PARTICLES / handCount);
+        const count = results.multiHandLandmarks.length;
+        const perHand = Math.floor(TOTAL_PARTICLES / count);
 
         results.multiHandLandmarks.forEach((lms) => {
-            const startIdx = pIdx;
-            const endIdx = startIdx + particlesPerHand;
+            const endIdx = pIdx + perHand;
             
-            // Bones
-            for (let i = 0; i < FINGER_BONES.length; i++) {
-                const [a, b] = FINGER_BONES[i];
+            // 1. FINGER BONES (Denser)
+            FINGER_BONES.forEach(([a, b]) => {
                 const vA = mapCoord(lms[a]), vB = mapCoord(lms[b]);
-                const limit = Math.floor(particlesPerHand * 0.025);
+                // Increased limit from 0.025 to 0.035 for more particles on fingers
+                const limit = Math.floor(perHand * 0.035); 
                 for (let j = 0; j < limit; j++) {
                     if (pIdx >= endIdx) break;
-                    const point = lerpVec3(vA, vB, Math.random());
-                    const r = 0.5; const theta = Math.random()*Math.PI*2;
-                    point.x += Math.cos(theta)*r*Math.random();
-                    point.y += Math.sin(theta)*r*Math.random();
-                    targetPositions[pIdx*3]=point.x; targetPositions[pIdx*3+1]=point.y; targetPositions[pIdx*3+2]=point.z;
-                    targetVisibility[pIdx]=1.0; pIdx++;
-                }
-            }
-            // Fingerprints
-            for (let i = 0; i < FINGERTIPS.length; i++) {
-                const vTip = mapCoord(lms[FINGERTIPS[i]]);
-                for (let j = 0; j < 600; j++) {
-                    if (pIdx >= endIdx) break;
-                    const angle = j * 2.4; const radius = 0.1 * Math.sqrt(j);
-                    const p = vTip.clone();
-                    p.x += Math.cos(angle)*radius; p.y += Math.sin(angle)*radius; p.z += Math.random()*0.2;
+                    const p = lerpVec3(vA, vB, Math.random());
+                    p.x += (Math.random()-0.5); p.y += (Math.random()-0.5);
                     targetPositions[pIdx*3]=p.x; targetPositions[pIdx*3+1]=p.y; targetPositions[pIdx*3+2]=p.z;
                     targetVisibility[pIdx]=1.0; pIdx++;
                 }
-            }
+            });
+
+            // 2. PALM FILL (Restored!)
+            PALM_TRIANGLES.forEach(([a, b, c]) => {
+                const vA = mapCoord(lms[a]), vB = mapCoord(lms[b]), vC = mapCoord(lms[c]);
+                const limit = Math.floor(perHand * 0.05); // 5% of particles per triangle
+                for (let j = 0; j < limit; j++) {
+                    if (pIdx >= endIdx) break;
+                    let r1=Math.random(), r2=Math.random(); if(r1+r2>1){r1=1-r1;r2=1-r2;}
+                    const p = new THREE.Vector3().copy(vA).addScaledVector(new THREE.Vector3().subVectors(vB,vA),r1).addScaledVector(new THREE.Vector3().subVectors(vC,vA),r2);
+                    p.z += (Math.random()-0.5)*0.5;
+                    targetPositions[pIdx*3]=p.x; targetPositions[pIdx*3+1]=p.y; targetPositions[pIdx*3+2]=p.z;
+                    targetVisibility[pIdx]=1.0; pIdx++;
+                }
+            });
+
+            // 3. FINGERTIPS (Fingerprints)
+            FINGERTIPS.forEach(idx => {
+                const vTip = mapCoord(lms[idx]);
+                for(let j=0; j<600; j++) {
+                     if (pIdx >= endIdx) break;
+                     const a = j*2.4, r=0.1*Math.sqrt(j);
+                     targetPositions[pIdx*3]=vTip.x+Math.cos(a)*r; targetPositions[pIdx*3+1]=vTip.y+Math.sin(a)*r; targetPositions[pIdx*3+2]=vTip.z;
+                     targetVisibility[pIdx]=1.0; pIdx++;
+                }
+            });
         });
-        for (let k = pIdx; k < TOTAL_PARTICLES; k++) targetVisibility[k] = 0.0;
-    } else {
-        for (let k = 0; k < TOTAL_PARTICLES; k++) targetVisibility[k] = 0.0;
-    }
+        // Clear unused particles
+        for(let k=pIdx; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0;
+    } else { for(let k=0; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0; }
     canvasCtx.restore();
 });
+faceMesh.onResults(res => lastFaceResults = res);
 
-faceMesh.onResults((results) => { lastFaceResults = results; });
+// HEALTH SIMULATION
+let ecgX = 0, lastBeat = 0;
+function updateHealthMonitor(isLocked) {
+    let desired = isLocked ? 72 : 110; desired += (Math.random() - 0.5) * 5;
+    currentBPM += (desired - currentBPM) * 0.05;
+    let o2 = isLocked ? 98 + Math.random() : 96 + Math.random();
+    bpmEl.innerText = Math.round(currentBPM); o2El.innerText = Math.round(o2) + "%";
+    stressEl.innerText = isLocked ? "NORMAL" : "ELEVATED"; stressEl.style.color = isLocked ? "#00ffff" : "#ff0055";
+    const speed = currentBPM / 60 * 2;
+    ecgCtx.beginPath(); ecgCtx.strokeStyle = isLocked ? "#00ffff" : "#ff0055"; ecgCtx.lineWidth = 2; ecgCtx.moveTo(ecgX, 25);
+    let y = 25;
+    if (Date.now() - lastBeat > (60000 / currentBPM)) {
+        ecgCtx.lineTo(ecgX + 2, 5); ecgCtx.lineTo(ecgX + 4, 45); ecgCtx.lineTo(ecgX + 6, 25);
+        lastBeat = Date.now(); ecgX += 6;
+    } else {
+        y += (Math.random() - 0.5) * 3; ecgCtx.lineTo(ecgX + speed, y); ecgX += speed;
+    }
+    ecgCtx.stroke();
+    if (ecgX > ecgCanvas.width) { ecgX = 0; ecgCtx.clearRect(0, 0, ecgCanvas.width, ecgCanvas.height); }
+}
 
 // INIT
 const video = document.getElementById('input-video');
@@ -215,107 +216,86 @@ async function init() {
         faceapi.nets.faceRecognitionNet.loadFromUri(modelUrl),
         faceapi.nets.ageGenderNet.loadFromUri(modelUrl)
     ]);
-
     if (knownFaces.length > 0) {
         const labeledDescriptors = knownFaces.map(r => new faceapi.LabeledFaceDescriptors(r.label, [new Float32Array(Object.values(r.descriptor))]));
         faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
     }
-    startCamera();
-}
-
-async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
     video.srcObject = stream;
-    video.onloadeddata = () => {
-        canvasElement.width = video.videoWidth;
-        canvasElement.height = video.videoHeight;
-        log("Online. Scanning..."); loop(); 
-    };
+    video.onloadeddata = () => { canvasElement.width=video.videoWidth; canvasElement.height=video.videoHeight; log("Online."); loop(); };
 }
 
 async function loop() {
-    if (video.readyState >= 2) {
-        await hands.send({ image: video });
-        await faceMesh.send({ image: video });
-        frameCounter++;
-        if (frameCounter % 10 === 0) runBiometrics();
+    if (video.readyState >= 2) { 
+        await hands.send({image:video}); 
+        await faceMesh.send({image:video}); 
+        if(new Date().getTime()%100 < 20) runBiometrics(); 
+        if (vitalsPanel.style.display === 'block') {
+            const isLocked = activeColor.hex === '#00FFFF';
+            updateHealthMonitor(isLocked);
+        }
     }
     requestAnimationFrame(loop);
 }
 
-// BIOMETRICS
 async function runBiometrics() {
     const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks(true).withFaceDescriptors().withAgeAndGender();
-    hudContainer.innerHTML = ''; recBtn.style.display = 'none';
+    hudContainer.innerHTML = ''; recBtn.style.display = 'none'; vitalsPanel.style.display = 'none';
 
     if (!detections.length) return;
-    const resized = faceapi.resizeResults(detections, { width: 320, height: 240 });
-
-    resized.forEach(d => {
-        const { age, gender, descriptor } = d;
-        const box = d.detection.box;
-        let labelText = "UNKNOWN"; let colorClass = "state-unknown";
-
+    vitalsPanel.style.display = 'block';
+    
+    if(Math.random() > 0.8) sqlLog(`SELECT * FROM subjects WHERE descriptor MATCH '${detections[0].descriptor.slice(0,5)}...'`);
+    
+    faceapi.resizeResults(detections, { width: 320, height: 240 }).forEach(d => {
+        let label = "UNKNOWN", color = "state-unknown";
         if (faceMatcher) {
-            const match = faceMatcher.findBestMatch(descriptor);
-            if (match.label !== 'unknown') { labelText = match.label; colorClass = "state-locked"; }
+            const match = faceMatcher.findBestMatch(d.descriptor);
+            if (match.label !== 'unknown') { label = match.label; color = "state-locked"; }
         }
-
-        if (labelText === "UNKNOWN") { currentFaceDescriptor = descriptor; recBtn.style.display = 'block'; }
-
-        const label = document.createElement('div');
-        label.className = `face-label ${colorClass}`;
-        label.style.left = `${320 - (box.x + box.width)}px`;
-        label.style.top = `${box.y - 30}px`;
-        label.style.borderColor = activeColor.hex; // Match system color
-        label.style.color = activeColor.hex;
-        label.innerHTML = `ID: ${labelText}<br>${gender.toUpperCase()} / ${Math.round(age)}`;
-        hudContainer.appendChild(label);
+        if (label === "UNKNOWN") { 
+            currentFaceDescriptor = d.descriptor; 
+            recBtn.style.display = 'block'; 
+            activeColor.hex = '#FF0055';
+        } else {
+            activeColor.hex = '#00FFFF';
+        }
+        
+        const el = document.createElement('div'); el.className = `face-label ${color}`;
+        el.style.left = `${320-(d.detection.box.x+d.detection.box.width)}px`; el.style.top = `${d.detection.box.y-30}px`;
+        el.style.borderColor=activeColor.hex; el.style.color=activeColor.hex;
+        el.innerHTML = `ID: ${label}<br>${d.gender.toUpperCase()}/${Math.round(d.age)}`;
+        hudContainer.appendChild(el);
     });
 }
 
-// GUI LOGIC
-recBtn.addEventListener('click', () => { if(currentFaceDescriptor) { modal.classList.remove('modal-hidden'); nameInput.focus(); }});
+recBtn.onclick = () => { if(currentFaceDescriptor) { modal.classList.remove('modal-hidden'); nameInput.focus(); }};
 const validate = () => { if(nameInput.value && consentCheck.checked) { saveBtn.disabled=false; saveBtn.classList.add('active'); } else { saveBtn.disabled=true; saveBtn.classList.remove('active'); }};
-nameInput.addEventListener('input', validate); consentCheck.addEventListener('change', validate);
-saveBtn.addEventListener('click', () => {
+nameInput.oninput = validate; consentCheck.onchange = validate;
+saveBtn.onclick = () => {
     const name = nameInput.value.toUpperCase();
-    knownFaces.push({ label: name, descriptor: currentFaceDescriptor });
-    localStorage.setItem('biometricDB', JSON.stringify(knownFaces));
+    Database.add(name, currentFaceDescriptor); 
+    sqlLog(`INSERT INTO subjects (label, vector) VALUES ('${name}', BLOB)`);
+    knownFaces = Database.getAll();
     const labeled = knownFaces.map(r => new faceapi.LabeledFaceDescriptors(r.label, [new Float32Array(Object.values(r.descriptor))]));
     faceMatcher = new faceapi.FaceMatcher(labeled, 0.6);
-    modal.classList.add('modal-hidden'); nameInput.value = ''; consentCheck.checked = false;
+    modal.classList.add('modal-hidden'); nameInput.value=''; consentCheck.checked=false;
     log(`RECORD CREATED: ${name}`);
-});
-cancelBtn.addEventListener('click', () => modal.classList.add('modal-hidden'));
+};
+cancelBtn.onclick = () => modal.classList.add('modal-hidden');
 
-// ANIMATION
 const clock = new THREE.Clock();
 function animate() {
-    const time = clock.getElapsedTime();
-    material.uniforms.uTime.value = time;
-    fadePlane.lookAt(camera.position);
-
-    const pos = geometry.attributes.position.array;
-    const vis = geometry.attributes.aVisible.array;
-    const target = targetPositions;
-    const tVis = targetVisibility;
-
-    // SUPER SMOOTH LERP (0.12 factor)
-    for (let i = 0; i < TOTAL_PARTICLES; i++) {
-        pos[i*3] += (target[i*3] - pos[i*3]) * 0.12;
-        pos[i*3+1] += (target[i*3+1] - pos[i*3+1]) * 0.12;
-        pos[i*3+2] += (target[i*3+2] - pos[i*3+2]) * 0.12;
-        vis[i] += (tVis[i] - vis[i]) * 0.1;
+    material.uniforms.uTime.value = clock.getElapsedTime(); fadePlane.lookAt(camera.position);
+    const pos=geometry.attributes.position.array, vis=geometry.attributes.aVisible.array;
+    for(let i=0; i<TOTAL_PARTICLES; i++) {
+        pos[i*3]+=(targetPositions[i*3]-pos[i*3])*0.12; pos[i*3+1]+=(targetPositions[i*3+1]-pos[i*3+1])*0.12; pos[i*3+2]+=(targetPositions[i*3+2]-pos[i*3+2])*0.12;
+        vis[i]+=(targetVisibility[i]-vis[i])*0.1;
     }
-    geometry.attributes.position.needsUpdate = true;
-    geometry.attributes.aVisible.needsUpdate = true;
-
-    controls.update();
-    renderer.render(scene, camera);
-    requestAnimationFrame(animate);
+    geometry.attributes.position.needsUpdate=true; geometry.attributes.aVisible.needsUpdate=true;
+    controls.update(); renderer.render(scene, camera); requestAnimationFrame(animate);
 }
-window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+window.onresize = () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); };
 
 init();
 animate();
