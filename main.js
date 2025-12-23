@@ -19,32 +19,37 @@ const saveBtn = document.getElementById('save-btn');
 const cancelBtn = document.getElementById('cancel-btn');
 const startOverlay = document.getElementById('start-overlay');
 
-// --- SOUND ENGINE (Synthesizer) ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// --- ROBUST AUDIO ENGINE ---
+let audioCtx = null;
+let audioEnabled = false;
+
 const SoundFX = {
     playTone: (freq, type, duration, vol=0.1) => {
+        if (!audioEnabled || !audioCtx) return; 
         if(audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        osc.type = type; 
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
         gain.gain.setValueAtTime(vol, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + duration);
+        osc.connect(gain); 
+        gain.connect(audioCtx.destination);
+        osc.start(); 
+        osc.stop(audioCtx.currentTime + duration);
     },
-    scan: () => { SoundFX.playTone(800, 'sine', 0.1, 0.05); }, // High blip
-    lock: () => { SoundFX.playTone(1200, 'sine', 0.4, 0.1); SoundFX.playTone(600, 'square', 0.2, 0.05); }, // Chime
-    alert: () => { SoundFX.playTone(150, 'sawtooth', 0.3, 0.1); }, // Low warning
-    type: () => { SoundFX.playTone(400 + Math.random()*200, 'square', 0.05, 0.02); } // Typing sound
+    scan: () => { SoundFX.playTone(800, 'sine', 0.1, 0.05); }, 
+    lock: () => { SoundFX.playTone(1200, 'sine', 0.4, 0.1); SoundFX.playTone(600, 'square', 0.2, 0.05); }, 
+    alert: () => { SoundFX.playTone(150, 'sawtooth', 0.3, 0.1); }, 
+    type: () => { SoundFX.playTone(400 + Math.random()*200, 'square', 0.05, 0.02); } 
 };
 
-// --- VOICE ENGINE (TTS) ---
 const speak = (text) => {
-    if(window.speechSynthesis.speaking) return;
+    if (!audioEnabled) return;
+    if (window.speechSynthesis.speaking) return;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.pitch = 0.8; // Robotic low pitch
-    utterance.rate = 1.1;  // Slightly fast
-    // Try to find a good sci-fi voice (Google US English or similar)
+    utterance.pitch = 0.8; 
+    utterance.rate = 1.1;
     const voices = window.speechSynthesis.getVoices();
     const sciFiVoice = voices.find(v => v.name.includes('Google US English')) || voices[0];
     if(sciFiVoice) utterance.voice = sciFiVoice;
@@ -53,17 +58,22 @@ const speak = (text) => {
 
 // --- STARTUP HANDLER ---
 startOverlay.addEventListener('click', () => {
-    audioCtx.resume();
-    startOverlay.style.opacity = 0;
-    setTimeout(() => startOverlay.style.display = 'none', 500);
-    SoundFX.lock();
-    speak("System Online. Biometric Scanners Active.");
+    try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtx.resume().then(() => {
+            audioEnabled = true;
+            startOverlay.style.opacity = 0;
+            setTimeout(() => startOverlay.style.display = 'none', 500);
+            SoundFX.lock();
+            speak("System Online.");
+        });
+    } catch (e) { console.log("Audio Init Warning:", e); }
 });
 
 // LOGGER
 const log = (msg) => { statusEl.innerText = msg; };
 const sqlLog = (cmd) => {
-    SoundFX.type(); // SFX
+    if (audioEnabled) SoundFX.type(); 
     const line = document.createElement('div');
     line.className = 'sql-line';
     let html = cmd.replace(/(SELECT|FROM|WHERE|INSERT|INTO|VALUES|CREATE|TABLE|IF|NOT|EXISTS)/g, '<span class="sql-keyword">$1</span>');
@@ -85,7 +95,7 @@ let faceMatcher = null;
 let currentFaceDescriptor = null;
 let activeColor = { hex: '#00ffff' };
 let currentBPM = 75;
-let lastSpokenID = ""; // To prevent repeating voice
+let lastSpokenID = ""; 
 
 // INIT
 sqlLog("CREATE TABLE IF NOT EXISTS subjects (id INT, label VARCHAR, descriptor BLOB)");
@@ -102,7 +112,6 @@ container.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-// --- NEW: HOLOGRAPHIC GRID ---
 const gridHelper = new THREE.GridHelper(200, 50, 0x004444, 0x001111);
 gridHelper.position.y = -15;
 scene.add(gridHelper);
@@ -236,7 +245,7 @@ function updateHealthMonitor(isLocked) {
     if (Date.now() - lastBeat > (60000 / currentBPM)) {
         ecgCtx.lineTo(ecgX + 2, 5); ecgCtx.lineTo(ecgX + 4, 45); ecgCtx.lineTo(ecgX + 6, 25);
         lastBeat = Date.now(); ecgX += 6;
-        SoundFX.scan(); // SFX: Beep on heartbeat
+        SoundFX.scan(); 
     } else {
         y += (Math.random() - 0.5) * 3; ecgCtx.lineTo(ecgX + speed, y); ecgX += speed;
     }
@@ -293,7 +302,6 @@ async function runBiometrics() {
             if (match.label !== 'unknown') { label = match.label; color = "state-locked"; }
         }
         
-        // --- VOICE LOGIC ---
         if (label !== lastSpokenID) {
             if (label === "UNKNOWN") {
                 speak("Warning. Unauthorized subject detected.");
@@ -341,10 +349,7 @@ cancelBtn.onclick = () => modal.classList.add('modal-hidden');
 const clock = new THREE.Clock();
 function animate() {
     material.uniforms.uTime.value = clock.getElapsedTime(); fadePlane.lookAt(camera.position);
-    
-    // Rotate Grid
     gridHelper.rotation.y += 0.002;
-
     const pos=geometry.attributes.position.array, vis=geometry.attributes.aVisible.array;
     for(let i=0; i<TOTAL_PARTICLES; i++) {
         pos[i*3]+=(targetPositions[i*3]-pos[i*3])*0.12; pos[i*3+1]+=(targetPositions[i*3+1]-pos[i*3+1])*0.12; pos[i*3+2]+=(targetPositions[i*3+2]-pos[i*3+2])*0.12;

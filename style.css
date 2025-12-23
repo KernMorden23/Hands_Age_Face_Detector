@@ -51,9 +51,12 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 .vital-val { color: #fff; text-shadow: 0 0 5px #00ffff; }
 #ecg-canvas { width: 100%; height: 50px; background: #001111; border-top: 1px solid #004444; margin-top: 5px; }
 
-/* VIDEO & HUD */
+/* VIDEO & HUD (UPDATED POSITION) */
 .video-container {
-    position: absolute; bottom: 20px; right: 20px; width: 320px; height: 240px;
+    position: absolute; 
+    top: 20px; /* <--- CHANGED FROM BOTTOM TO TOP */
+    right: 20px; 
+    width: 320px; height: 240px;
     z-index: 10; border: 1px solid #333; background: #000; overflow: hidden; border-radius: 4px;
 }
 #input-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); opacity: 0.3; filter: grayscale(100%) contrast(1.2); }
