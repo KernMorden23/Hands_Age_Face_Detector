@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Biometric Hand Scanner</title>
+    <title>Biometric Database System</title>
     <link rel="stylesheet" href="style.css">
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
@@ -22,7 +22,7 @@
     </script>
 </head>
 <body>
-    <div id="status">Initializing Biometrics...</div>
+    <div id="status">Initializing Biometric Database...</div>
     
     <div id="container"></div>
 
@@ -30,6 +30,29 @@
         <video id="input-video" playsinline muted autoplay></video>
         <canvas id="output-canvas"></canvas>
         <div id="hud-container"></div>
+        
+        <button id="rec-btn">✚ REC SUBJECT</button>
+    </div>
+
+    <div id="reg-modal" class="modal-hidden">
+        <div class="modal-content">
+            <h2>NEW SUBJECT DETECTED</h2>
+            <div class="scan-line"></div>
+            <p>Biometric signature isolated. Enter subject details for database entry.</p>
+            
+            <input type="text" id="subject-name" placeholder="ENTER CODENAME..." autocomplete="off">
+            
+            <label class="checkbox-container">
+                <input type="checkbox" id="consent-check">
+                <span class="checkmark"></span>
+                AUTHORIZE BIOMETRIC RECORDING
+            </label>
+
+            <div class="modal-actions">
+                <button id="cancel-btn">DISCARD</button>
+                <button id="save-btn" disabled>SAVE RECORD</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="main.js"></script>
