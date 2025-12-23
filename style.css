@@ -1,12 +1,13 @@
-body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
 
 #container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
 
 #status {
     position: absolute; top: 20px; left: 20px;
-    color: #00ff88; background: rgba(0,0,0,0.8);
-    padding: 10px; border-radius: 4px; pointer-events: none;
-    z-index: 100; font-size: 14px; border: 1px solid #00ff88;
+    color: #00ff88; background: rgba(0, 20, 10, 0.8);
+    padding: 8px 16px; border-radius: 20px; pointer-events: none;
+    z-index: 100; font-size: 13px; letter-spacing: 1px;
+    border: 1px solid #00ff88; box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
 }
 
 .video-container {
@@ -15,15 +16,17 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courie
     right: 20px;  
     width: 320px; height: 240px;
     z-index: 10; 
-    border: 2px solid #333; 
+    border: 1px solid #444; 
     background: #000;
     overflow: hidden; 
+    border-radius: 8px;
 }
 
 #input-video {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     transform: scaleX(-1); 
-    opacity: 0.5;
+    opacity: 0.4;
+    filter: grayscale(100%) contrast(1.2); /* Makes it look like a raw sensor feed */
 }
 
 #output-canvas {
@@ -36,39 +39,26 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courie
     pointer-events: none; z-index: 20;
 }
 
-/* Base style for the face box */
 .face-label {
     position: absolute; 
-    border-width: 2px;
-    border-style: solid;
-    padding: 4px 8px; 
-    font-size: 11px; 
-    font-weight: bold;
+    border-left: 3px solid;
+    padding: 4px 10px; 
+    font-size: 10px; 
+    font-weight: 700;
+    letter-spacing: 1px;
     white-space: nowrap;
-    border-radius: 4px;
     transform: scaleX(1); 
-    transition: all 0.2s ease-out;
+    transition: all 0.15s ease-out;
+    background: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+    text-transform: uppercase;
 }
 
-/* State: Scanning (Orange/Blinking) */
 .state-scanning {
     border-color: #ffaa00;
     color: #ffaa00;
-    background: rgba(40, 20, 0, 0.6);
-    box-shadow: 0 0 10px rgba(255, 170, 0, 0.4);
-    animation: pulseBorder 1s infinite;
 }
 
-/* State: Locked/Sure (Cyan/Solid) */
 .state-locked {
     border-color: #00ffff;
     color: #00ffff;
-    background: rgba(0, 40, 40, 0.8);
-    box-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
-}
-
-@keyframes pulseBorder {
-    0% { opacity: 0.8; }
-    50% { opacity: 0.4; }
-    100% { opacity: 0.8; }
 }
