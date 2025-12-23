@@ -10,7 +10,20 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
     border-left: 3px solid #00ff88;
 }
 
-/* SQL TERMINAL */
+/* START OVERLAY (For Audio) */
+#start-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: #000; z-index: 999; display: flex; justify-content: center; align-items: center;
+}
+.start-btn {
+    border: 2px solid #00ff88; color: #00ff88; padding: 20px 40px;
+    font-family: 'Courier New', monospace; font-size: 20px; cursor: pointer;
+    box-shadow: 0 0 20px rgba(0,255,136,0.5); letter-spacing: 4px;
+    transition: all 0.3s;
+}
+.start-btn:hover { background: #00ff88; color: #000; box-shadow: 0 0 50px rgba(0,255,136,1); }
+
+/* TERMINAL & PANELS */
 #sql-terminal {
     position: absolute; top: 80px; left: 20px;
     width: 300px; height: 200px;
@@ -20,10 +33,10 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 }
 .terminal-header { background: #002211; color: #00ff88; padding: 5px; font-size: 10px; border-bottom: 1px solid #333; }
 #terminal-content { flex-grow: 1; padding: 10px; overflow: hidden; font-size: 10px; display: flex; flex-direction: column; justify-content: flex-end; }
+.sql-line { margin-bottom: 2px; }
 .sql-keyword { color: #ff0055; font-weight: bold; }
 .sql-value { color: #00ffff; }
 
-/* NEW: VITALS PANEL */
 #vitals-panel {
     position: absolute; top: 300px; left: 20px;
     width: 300px; padding: 15px;
@@ -32,12 +45,13 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
     z-index: 50; color: #00ffff;
     font-family: 'Segoe UI', sans-serif;
     box-shadow: 0 0 15px rgba(0, 255, 255, 0.1);
-    display: none; /* Hidden until face detected */
+    display: none;
 }
 .vital-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; font-weight: bold; }
 .vital-val { color: #fff; text-shadow: 0 0 5px #00ffff; }
 #ecg-canvas { width: 100%; height: 50px; background: #001111; border-top: 1px solid #004444; margin-top: 5px; }
 
+/* VIDEO & HUD */
 .video-container {
     position: absolute; bottom: 20px; right: 20px; width: 320px; height: 240px;
     z-index: 10; border: 1px solid #333; background: #000; overflow: hidden; border-radius: 4px;
@@ -54,7 +68,7 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 .state-locked { border-color: #00ffff; color: #00ffff; }
 .state-unknown { border-color: #ff0055; color: #ff0055; }
 
-/* REC BUTTON & MODAL (Same as before) */
+/* CONTROLS */
 #rec-btn { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,0,85,0.2); color: #ff0055; border: 1px solid; padding: 5px 15px; font-size: 10px; cursor: pointer; z-index: 30; display: none; font-weight: bold; }
 #rec-btn:hover { background: #ff0055; color: #000; }
 .modal-hidden { display: none !important; }

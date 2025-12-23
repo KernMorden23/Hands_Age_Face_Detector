@@ -17,10 +17,53 @@ const nameInput = document.getElementById('subject-name');
 const consentCheck = document.getElementById('consent-check');
 const saveBtn = document.getElementById('save-btn');
 const cancelBtn = document.getElementById('cancel-btn');
+const startOverlay = document.getElementById('start-overlay');
+
+// --- SOUND ENGINE (Synthesizer) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const SoundFX = {
+    playTone: (freq, type, duration, vol=0.1) => {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    },
+    scan: () => { SoundFX.playTone(800, 'sine', 0.1, 0.05); }, // High blip
+    lock: () => { SoundFX.playTone(1200, 'sine', 0.4, 0.1); SoundFX.playTone(600, 'square', 0.2, 0.05); }, // Chime
+    alert: () => { SoundFX.playTone(150, 'sawtooth', 0.3, 0.1); }, // Low warning
+    type: () => { SoundFX.playTone(400 + Math.random()*200, 'square', 0.05, 0.02); } // Typing sound
+};
+
+// --- VOICE ENGINE (TTS) ---
+const speak = (text) => {
+    if(window.speechSynthesis.speaking) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.pitch = 0.8; // Robotic low pitch
+    utterance.rate = 1.1;  // Slightly fast
+    // Try to find a good sci-fi voice (Google US English or similar)
+    const voices = window.speechSynthesis.getVoices();
+    const sciFiVoice = voices.find(v => v.name.includes('Google US English')) || voices[0];
+    if(sciFiVoice) utterance.voice = sciFiVoice;
+    window.speechSynthesis.speak(utterance);
+};
+
+// --- STARTUP HANDLER ---
+startOverlay.addEventListener('click', () => {
+    audioCtx.resume();
+    startOverlay.style.opacity = 0;
+    setTimeout(() => startOverlay.style.display = 'none', 500);
+    SoundFX.lock();
+    speak("System Online. Biometric Scanners Active.");
+});
 
 // LOGGER
 const log = (msg) => { statusEl.innerText = msg; };
 const sqlLog = (cmd) => {
+    SoundFX.type(); // SFX
     const line = document.createElement('div');
     line.className = 'sql-line';
     let html = cmd.replace(/(SELECT|FROM|WHERE|INSERT|INTO|VALUES|CREATE|TABLE|IF|NOT|EXISTS)/g, '<span class="sql-keyword">$1</span>');
@@ -31,9 +74,9 @@ const sqlLog = (cmd) => {
 };
 
 // CONFIG
-const TOTAL_PARTICLES = 40000; // Increased for density
+const TOTAL_PARTICLES = 40000;
 const FINGER_BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
-const PALM_TRIANGLES = [[0, 5, 9], [0, 9, 13], [0, 13, 17]]; // Restored Palm Logic
+const PALM_TRIANGLES = [[0, 5, 9], [0, 9, 13], [0, 13, 17]];
 const FINGERTIPS = [4, 8, 12, 16, 20];
 
 // STATE
@@ -42,6 +85,7 @@ let faceMatcher = null;
 let currentFaceDescriptor = null;
 let activeColor = { hex: '#00ffff' };
 let currentBPM = 75;
+let lastSpokenID = ""; // To prevent repeating voice
 
 // INIT
 sqlLog("CREATE TABLE IF NOT EXISTS subjects (id INT, label VARCHAR, descriptor BLOB)");
@@ -58,8 +102,11 @@ container.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xaa00ff, wireframe: true, transparent: true, opacity: 0.3 }));
-scene.add(orb);
+// --- NEW: HOLOGRAPHIC GRID ---
+const gridHelper = new THREE.GridHelper(200, 50, 0x004444, 0x001111);
+gridHelper.position.y = -15;
+scene.add(gridHelper);
+
 const fadePlane = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.15 }));
 fadePlane.position.z = -1;
 scene.add(fadePlane);
@@ -87,7 +134,6 @@ const material = new THREE.ShaderMaterial({
         void main() {
             vec3 pos = position + sin(uTime * 5.0 + aRandom.x * 20.0) * 0.05;
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-            // Increased size from 40.0 to 65.0 for better visibility
             gl_PointSize = (65.0 * aVisible) / -mvPosition.z;
             gl_Position = projectionMatrix * mvPosition;
             vColor = uColor; vAlpha = aVisible;
@@ -137,11 +183,8 @@ hands.onResults((results) => {
 
         results.multiHandLandmarks.forEach((lms) => {
             const endIdx = pIdx + perHand;
-            
-            // 1. FINGER BONES (Denser)
             FINGER_BONES.forEach(([a, b]) => {
                 const vA = mapCoord(lms[a]), vB = mapCoord(lms[b]);
-                // Increased limit from 0.025 to 0.035 for more particles on fingers
                 const limit = Math.floor(perHand * 0.035); 
                 for (let j = 0; j < limit; j++) {
                     if (pIdx >= endIdx) break;
@@ -151,11 +194,9 @@ hands.onResults((results) => {
                     targetVisibility[pIdx]=1.0; pIdx++;
                 }
             });
-
-            // 2. PALM FILL (Restored!)
             PALM_TRIANGLES.forEach(([a, b, c]) => {
                 const vA = mapCoord(lms[a]), vB = mapCoord(lms[b]), vC = mapCoord(lms[c]);
-                const limit = Math.floor(perHand * 0.05); // 5% of particles per triangle
+                const limit = Math.floor(perHand * 0.05); 
                 for (let j = 0; j < limit; j++) {
                     if (pIdx >= endIdx) break;
                     let r1=Math.random(), r2=Math.random(); if(r1+r2>1){r1=1-r1;r2=1-r2;}
@@ -165,8 +206,6 @@ hands.onResults((results) => {
                     targetVisibility[pIdx]=1.0; pIdx++;
                 }
             });
-
-            // 3. FINGERTIPS (Fingerprints)
             FINGERTIPS.forEach(idx => {
                 const vTip = mapCoord(lms[idx]);
                 for(let j=0; j<600; j++) {
@@ -177,7 +216,6 @@ hands.onResults((results) => {
                 }
             });
         });
-        // Clear unused particles
         for(let k=pIdx; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0;
     } else { for(let k=0; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0; }
     canvasCtx.restore();
@@ -198,6 +236,7 @@ function updateHealthMonitor(isLocked) {
     if (Date.now() - lastBeat > (60000 / currentBPM)) {
         ecgCtx.lineTo(ecgX + 2, 5); ecgCtx.lineTo(ecgX + 4, 45); ecgCtx.lineTo(ecgX + 6, 25);
         lastBeat = Date.now(); ecgX += 6;
+        SoundFX.scan(); // SFX: Beep on heartbeat
     } else {
         y += (Math.random() - 0.5) * 3; ecgCtx.lineTo(ecgX + speed, y); ecgX += speed;
     }
@@ -242,7 +281,7 @@ async function runBiometrics() {
     const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks(true).withFaceDescriptors().withAgeAndGender();
     hudContainer.innerHTML = ''; recBtn.style.display = 'none'; vitalsPanel.style.display = 'none';
 
-    if (!detections.length) return;
+    if (!detections.length) { lastSpokenID = ""; return; }
     vitalsPanel.style.display = 'block';
     
     if(Math.random() > 0.8) sqlLog(`SELECT * FROM subjects WHERE descriptor MATCH '${detections[0].descriptor.slice(0,5)}...'`);
@@ -253,6 +292,19 @@ async function runBiometrics() {
             const match = faceMatcher.findBestMatch(d.descriptor);
             if (match.label !== 'unknown') { label = match.label; color = "state-locked"; }
         }
+        
+        // --- VOICE LOGIC ---
+        if (label !== lastSpokenID) {
+            if (label === "UNKNOWN") {
+                speak("Warning. Unauthorized subject detected.");
+                SoundFX.alert();
+            } else {
+                speak("Welcome back, " + label + ". Access Granted.");
+                SoundFX.lock();
+            }
+            lastSpokenID = label;
+        }
+
         if (label === "UNKNOWN") { 
             currentFaceDescriptor = d.descriptor; 
             recBtn.style.display = 'block'; 
@@ -280,6 +332,8 @@ saveBtn.onclick = () => {
     const labeled = knownFaces.map(r => new faceapi.LabeledFaceDescriptors(r.label, [new Float32Array(Object.values(r.descriptor))]));
     faceMatcher = new faceapi.FaceMatcher(labeled, 0.6);
     modal.classList.add('modal-hidden'); nameInput.value=''; consentCheck.checked=false;
+    speak("Subject " + name + " added to database.");
+    SoundFX.lock();
     log(`RECORD CREATED: ${name}`);
 };
 cancelBtn.onclick = () => modal.classList.add('modal-hidden');
@@ -287,6 +341,10 @@ cancelBtn.onclick = () => modal.classList.add('modal-hidden');
 const clock = new THREE.Clock();
 function animate() {
     material.uniforms.uTime.value = clock.getElapsedTime(); fadePlane.lookAt(camera.position);
+    
+    // Rotate Grid
+    gridHelper.rotation.y += 0.002;
+
     const pos=geometry.attributes.position.array, vis=geometry.attributes.aVisible.array;
     for(let i=0; i<TOTAL_PARTICLES; i++) {
         pos[i*3]+=(targetPositions[i*3]-pos[i*3])*0.12; pos[i*3+1]+=(targetPositions[i*3+1]-pos[i*3+1])*0.12; pos[i*3+2]+=(targetPositions[i*3+2]-pos[i*3+2])*0.12;

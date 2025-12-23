@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Biometric Vitals System</title>
+    <title>JARVIS Biometric System</title>
     <link rel="stylesheet" href="style.css">
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -24,26 +24,21 @@
     </script>
 </head>
 <body>
-    <div id="status">System Initializing...</div>
+    <div id="start-overlay">
+        <div class="start-btn">INITIALIZE SYSTEM AUDIO</div>
+    </div>
+
+    <div id="status">System Standby...</div>
     
     <div id="sql-terminal">
-        <div class="terminal-header">:: DATABASE_LOG ::</div>
+        <div class="terminal-header">:: SYSTEM_LOG ::</div>
         <div id="terminal-content"></div>
     </div>
 
     <div id="vitals-panel">
-        <div class="vital-row">
-            <span class="vital-label">HR (BPM)</span>
-            <span id="bpm-val" class="vital-val">--</span>
-        </div>
-        <div class="vital-row">
-            <span class="vital-label">O2 LEVEL</span>
-            <span id="o2-val" class="vital-val">--%</span>
-        </div>
-        <div class="vital-row">
-            <span class="vital-label">STRESS</span>
-            <span id="stress-val" class="vital-val">--</span>
-        </div>
+        <div class="vital-row"><span class="vital-label">HR (BPM)</span><span id="bpm-val" class="vital-val">--</span></div>
+        <div class="vital-row"><span class="vital-label">O2 LEVEL</span><span id="o2-val" class="vital-val">--%</span></div>
+        <div class="vital-row"><span class="vital-label">STATUS</span><span id="stress-val" class="vital-val">--</span></div>
         <canvas id="ecg-canvas" width="200" height="50"></canvas>
     </div>
     
