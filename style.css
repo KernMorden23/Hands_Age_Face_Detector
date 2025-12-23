@@ -10,7 +10,28 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
     border-left: 3px solid #00ff88;
 }
 
-/* START OVERLAY (For Audio) */
+/* ILLUMINATOR (Tactical Flashlight) */
+#illuminator {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    pointer-events: none; z-index: 900; opacity: 0; transition: opacity 0.5s;
+    box-shadow: inset 0 0 150px 100px rgba(255, 255, 255, 0.9);
+    border: 2px solid white;
+}
+#illuminator.active { opacity: 1; }
+
+/* CONTROLS */
+#controls-top {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 101;
+}
+#light-btn {
+    background: rgba(0,0,0,0.5); border: 1px solid #00ff88; color: #00ff88;
+    padding: 8px 15px; font-family: 'Courier New', monospace; cursor: pointer;
+    font-size: 11px; letter-spacing: 1px; transition: all 0.3s;
+}
+#light-btn:hover, #light-btn.active { background: #00ff88; color: #000; box-shadow: 0 0 15px #00ff88; }
+
+/* START OVERLAY */
 #start-overlay {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     background: #000; z-index: 999; display: flex; justify-content: center; align-items: center;
@@ -51,18 +72,15 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 .vital-val { color: #fff; text-shadow: 0 0 5px #00ffff; }
 #ecg-canvas { width: 100%; height: 50px; background: #001111; border-top: 1px solid #004444; margin-top: 5px; }
 
-/* VIDEO & HUD (UPDATED POSITION) */
+/* VIDEO & HUD (TOP RIGHT) */
 .video-container {
-    position: absolute; 
-    top: 20px; /* <--- CHANGED FROM BOTTOM TO TOP */
-    right: 20px; 
+    position: absolute; top: 20px; right: 20px; 
     width: 320px; height: 240px;
     z-index: 10; border: 1px solid #333; background: #000; overflow: hidden; border-radius: 4px;
 }
 #input-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); opacity: 0.3; filter: grayscale(100%) contrast(1.2); }
 #output-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
 #hud-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
-
 .face-label {
     position: absolute; padding: 4px 8px; font-size: 10px; font-weight: 800;
     white-space: nowrap; transform: scaleX(1); transition: all 0.2s;
@@ -71,20 +89,34 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 .state-locked { border-color: #00ffff; color: #00ffff; }
 .state-unknown { border-color: #ff0055; color: #ff0055; }
 
-/* CONTROLS */
+/* REC BUTTON */
 #rec-btn { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,0,85,0.2); color: #ff0055; border: 1px solid; padding: 5px 15px; font-size: 10px; cursor: pointer; z-index: 30; display: none; font-weight: bold; }
 #rec-btn:hover { background: #ff0055; color: #000; }
+
+/* --- MODAL FIXES --- */
 .modal-hidden { display: none !important; }
 #reg-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 200; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
-.modal-content { width: 400px; background: #0a0a0a; border: 1px solid #00ffff; padding: 30px; color: #00ffff; font-family: 'Courier New', monospace; box-shadow: 0 0 30px rgba(0,255,255,0.2); }
-input[type="text"] { width: 100%; background: #111; border: 1px solid #333; color: #fff; padding: 10px; margin-bottom: 20px; outline: none; }
+.modal-content { 
+    width: 400px; background: #050a0a; border: 1px solid #00ffff; padding: 40px; 
+    color: #00ffff; font-family: 'Courier New', monospace; 
+    box-shadow: 0 0 40px rgba(0,255,255,0.1); 
+}
+.modal-content h2 { margin-top: 0; border-bottom: 1px solid #004444; padding-bottom: 15px; margin-bottom: 25px; letter-spacing: 2px; }
+
+input[type="text"] { 
+    width: 100%; background: #001111; border: 1px solid #004444; 
+    color: #00ffff; padding: 15px; margin-bottom: 25px; outline: none; box-sizing: border-box; font-family: 'Courier New'; 
+}
 input[type="text"]:focus { border-color: #00ffff; }
-.checkbox-container { display: flex; align-items: center; cursor: pointer; font-size: 12px; color: #aaa; margin-bottom: 20px; }
+
+.checkbox-container { display: flex; align-items: center; cursor: pointer; font-size: 12px; color: #aaa; margin-bottom: 30px; }
 .checkbox-container input { display: none; }
-.checkmark { width: 15px; height: 15px; border: 1px solid #555; margin-right: 10px; display: inline-block; }
-.checkbox-container input:checked ~ .checkmark { background: #00ffff; }
-.modal-actions { display: flex; justify-content: space-between; }
-button { padding: 10px 20px; border: none; font-weight: bold; cursor: pointer; }
-#cancel-btn { background: transparent; border: 1px solid #555; color: #888; }
-#save-btn { background: #003333; color: #006666; cursor: not-allowed; }
-#save-btn.active { background: #00ffff; color: #000; }
+.checkmark { width: 16px; height: 16px; border: 1px solid #555; margin-right: 12px; display: inline-block; background: #000; transition: all 0.2s; }
+.checkbox-container input:checked ~ .checkmark { background: #00ffff; border-color: #00ffff; box-shadow: 0 0 10px #00ffff; }
+
+.modal-actions { display: flex; gap: 20px; }
+.modal-actions button { flex: 1; padding: 15px 0; border: none; font-weight: bold; cursor: pointer; font-family: 'Segoe UI', sans-serif; letter-spacing: 1px; }
+#cancel-btn { background: transparent; border: 1px solid #333; color: #666; }
+#cancel-btn:hover { border-color: #ff0055; color: #ff0055; }
+#save-btn { background: #002222; color: #004444; border: 1px solid #004444; cursor: not-allowed; }
+#save-btn.active { background: #00ffff; color: #000; border-color: #00ffff; cursor: pointer; box-shadow: 0 0 20px rgba(0,255,255,0.4); }

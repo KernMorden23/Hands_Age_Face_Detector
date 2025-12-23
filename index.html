@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JARVIS Biometric System</title>
+    <title>Biometric System</title>
     <link rel="icon" href="data:,">
     
     <script>
@@ -36,10 +36,16 @@
 </head>
 <body>
     <div id="start-overlay">
-        <div class="start-btn">INITIALIZE SYSTEM AUDIO</div>
+        <div class="start-btn">INITIALIZE SYSTEM</div>
     </div>
+    
+    <div id="illuminator"></div>
 
     <div id="status">System Standby...</div>
+    
+    <div id="controls-top">
+        <button id="light-btn">☀ LOW LIGHT</button>
+    </div>
     
     <div id="sql-terminal">
         <div class="terminal-header">:: SYSTEM_LOG ::</div>
@@ -47,8 +53,8 @@
     </div>
 
     <div id="vitals-panel">
-        <div class="vital-row"><span class="vital-label">HR (BPM)</span><span id="bpm-val" class="vital-val">--</span></div>
-        <div class="vital-row"><span class="vital-label">O2 LEVEL</span><span id="o2-val" class="vital-val">--%</span></div>
+        <div class="vital-row"><span class="vital-label">HR</span><span id="bpm-val" class="vital-val">--</span></div>
+        <div class="vital-row"><span class="vital-label">O2</span><span id="o2-val" class="vital-val">--%</span></div>
         <div class="vital-row"><span class="vital-label">STATUS</span><span id="stress-val" class="vital-val">--</span></div>
         <canvas id="ecg-canvas" width="200" height="50"></canvas>
     </div>
@@ -64,10 +70,9 @@
 
     <div id="reg-modal" class="modal-hidden">
         <div class="modal-content">
-            <h2>NEW SUBJECT DETECTED</h2>
+            <h2>NEW SUBJECT</h2>
             <div class="scan-line"></div>
-            <p>Biometric signature isolated. Enter details.</p>
-            <input type="text" id="subject-name" placeholder="ENTER CODENAME..." autocomplete="off">
+            <input type="text" id="subject-name" placeholder="CODENAME..." autocomplete="off">
             <label class="checkbox-container">
                 <input type="checkbox" id="consent-check">
                 <span class="checkmark"></span>
@@ -75,7 +80,7 @@
             </label>
             <div class="modal-actions">
                 <button id="cancel-btn">DISCARD</button>
-                <button id="save-btn" disabled>EXECUTE INSERT</button>
+                <button id="save-btn" disabled>SAVE</button>
             </div>
         </div>
     </div>
