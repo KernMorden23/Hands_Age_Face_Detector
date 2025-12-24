@@ -10,7 +10,6 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
     border-left: 3px solid #00ff88;
 }
 
-/* ILLUMINATOR (Tactical Flashlight) */
 #illuminator {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     pointer-events: none; z-index: 900; opacity: 0; transition: opacity 0.5s;
@@ -19,7 +18,6 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 }
 #illuminator.active { opacity: 1; }
 
-/* CONTROLS */
 #controls-top {
     position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
     z-index: 101;
@@ -31,7 +29,6 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 }
 #light-btn:hover, #light-btn.active { background: #00ff88; color: #000; box-shadow: 0 0 15px #00ff88; }
 
-/* START OVERLAY */
 #start-overlay {
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     background: #000; z-index: 999; display: flex; justify-content: center; align-items: center;
@@ -44,7 +41,6 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 }
 .start-btn:hover { background: #00ff88; color: #000; box-shadow: 0 0 50px rgba(0,255,136,1); }
 
-/* TERMINAL & PANELS */
 #sql-terminal {
     position: absolute; top: 80px; left: 20px;
     width: 300px; height: 200px;
@@ -72,7 +68,6 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 .vital-val { color: #fff; text-shadow: 0 0 5px #00ffff; }
 #ecg-canvas { width: 100%; height: 50px; background: #001111; border-top: 1px solid #004444; margin-top: 5px; }
 
-/* VIDEO & HUD (TOP RIGHT) */
 .video-container {
     position: absolute; top: 20px; right: 20px; 
     width: 320px; height: 240px;
@@ -89,11 +84,33 @@ body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe 
 .state-locked { border-color: #00ffff; color: #00ffff; }
 .state-unknown { border-color: #ff0055; color: #ff0055; }
 
-/* REC BUTTON */
+/* FINGERPRINT SCANNER */
+#finger-scanner {
+    position: absolute; bottom: 20px; right: 20px;
+    width: 80px; height: 100px;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+    border-radius: 8px; background: rgba(0, 20, 10, 0.5);
+    display: flex; justify-content: center; align-items: center;
+    overflow: hidden; transition: all 0.3s; z-index: 25; pointer-events: none;
+}
+#finger-scanner.active { border-color: #00ff88; box-shadow: 0 0 15px #00ff88; }
+.scanner-reticle { width: 60px; height: 80px; border: 2px dashed rgba(0, 255, 136, 0.5); border-radius: 20px; position: absolute; }
+.scan-beam {
+    position: absolute; top: 0; left: 0; width: 100%; height: 4px;
+    background: #00ff88; box-shadow: 0 0 10px #00ff88; opacity: 0;
+}
+@keyframes scan-move { 0% { top: 10%; opacity: 1; } 50% { top: 90%; opacity: 1; } 100% { top: 10%; opacity: 1; } }
+#finger-status { position: absolute; bottom: 2px; font-size: 8px; color: #00ff88; font-weight: bold; text-align: center; width: 100%; }
+
+#finger-canvas {
+    position: absolute; top: 0; left: 0; width: 80px; height: 100px;
+    opacity: 0; transition: opacity 0.5s ease-in; z-index: 5; background: rgba(0, 20, 10, 0.8);
+}
+#finger-canvas.revealed { opacity: 1; }
+
 #rec-btn { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,0,85,0.2); color: #ff0055; border: 1px solid; padding: 5px 15px; font-size: 10px; cursor: pointer; z-index: 30; display: none; font-weight: bold; }
 #rec-btn:hover { background: #ff0055; color: #000; }
 
-/* --- MODAL FIXES --- */
 .modal-hidden { display: none !important; }
 #reg-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 200; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
 .modal-content { 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Biometric System</title>
+    <title>Biometric Security System</title>
     <link rel="icon" href="data:,">
     
     <script>
@@ -28,8 +28,7 @@
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "tweakpane": "https://cdn.jsdelivr.net/npm/tweakpane@4.0.1/dist/tweakpane.min.js"
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -40,7 +39,6 @@
     </div>
     
     <div id="illuminator"></div>
-
     <div id="status">System Standby...</div>
     
     <div id="controls-top">
@@ -64,6 +62,14 @@
     <div class="video-container">
         <video id="input-video" playsinline muted autoplay></video>
         <canvas id="output-canvas"></canvas>
+        
+        <div id="finger-scanner">
+            <div class="scanner-reticle"></div>
+            <div class="scan-beam"></div>
+            <canvas id="finger-canvas" width="80" height="100"></canvas>
+            <div id="finger-status">PLACE FINGER</div>
+        </div>
+
         <div id="hud-container"></div>
         <button id="rec-btn">✚ REC SUBJECT</button>
     </div>

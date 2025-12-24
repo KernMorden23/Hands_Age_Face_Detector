@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Database } from './db.js';
 
-// --- ELEMENTS ---
+// --- DOM ELEMENTS ---
 const statusEl = document.getElementById('status');
 const terminalContent = document.getElementById('terminal-content');
 const hudContainer = document.getElementById('hud-container');
@@ -25,9 +25,16 @@ const video = document.getElementById('input-video');
 const canvasElement = document.getElementById('output-canvas');
 const canvasCtx = canvasElement.getContext('2d');
 
+// --- FINGERPRINT UI ---
+const fingerScanner = document.getElementById('finger-scanner');
+const fingerStatus = document.getElementById('finger-status');
+const scanBeam = document.querySelector('.scan-beam');
+const fingerCanvas = document.getElementById('finger-canvas');
+const fingerCtx = fingerCanvas.getContext('2d');
+
 // --- CONFIG ---
 const TOTAL_PARTICLES = 40000;
-const LERP_FACTOR = 0.08; // Smoothness (Lower is smoother)
+const LERP_FACTOR = 0.08; 
 const FINGER_BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
 const PALM_TRIANGLES = [[0, 5, 9], [0, 9, 13], [0, 13, 17]];
 const FINGERTIPS = [4, 8, 12, 16, 20];
@@ -40,8 +47,15 @@ let activeColor = { hex: '#00ffff' };
 let currentBPM = 75;
 let lastSpokenID = ""; 
 let isScanning = false;
+let lightMode = false;
+let lastFaceMeshResults = null;
 
-// --- AUDIO SYSTEM ---
+// Fingerprint State
+let scanTimer = 0;
+let isFingerLocked = false;
+let isVerified = false; 
+
+// --- AUDIO ---
 let audioCtx = null;
 let audioEnabled = false;
 
@@ -61,7 +75,7 @@ const SoundFX = {
     scan: () => { SoundFX.playTone(800, 'sine', 0.1, 0.05); }, 
     lock: () => { SoundFX.playTone(1200, 'sine', 0.4, 0.1); SoundFX.playTone(600, 'square', 0.2, 0.05); }, 
     alert: () => { SoundFX.playTone(150, 'sawtooth', 0.3, 0.1); }, 
-    type: () => { SoundFX.playTone(400 + Math.random()*200, 'square', 0.05, 0.02); } 
+    process: () => { SoundFX.playTone(2000 + Math.random()*500, 'square', 0.05, 0.01); } 
 };
 
 const speak = (text) => {
@@ -78,7 +92,7 @@ const speak = (text) => {
 // --- LOGGING ---
 const log = (msg) => { statusEl.innerText = msg; };
 const sqlLog = (cmd) => {
-    if (audioEnabled) SoundFX.type(); 
+    if (audioEnabled) SoundFX.process(); 
     const line = document.createElement('div');
     line.className = 'sql-line';
     let html = cmd.replace(/(SELECT|FROM|WHERE|INSERT|INTO|VALUES|CREATE|TABLE|IF|NOT|EXISTS)/g, '<span class="sql-keyword">$1</span>');
@@ -88,7 +102,7 @@ const sqlLog = (cmd) => {
     if (terminalContent.children.length > 8) terminalContent.removeChild(terminalContent.firstChild);
 };
 
-// --- THREE.JS SCENE ---
+// --- SCENE ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.z = 35;
@@ -103,7 +117,6 @@ const gridHelper = new THREE.GridHelper(200, 50, 0x004444, 0x001111);
 gridHelper.position.y = -15;
 scene.add(gridHelper);
 
-// PARTICLES
 const geometry = new THREE.BufferGeometry();
 const positions = new Float32Array(TOTAL_PARTICLES * 3);
 const targetPositions = new Float32Array(TOTAL_PARTICLES * 3);
@@ -143,16 +156,116 @@ scene.add(particles);
 const hands = new window.Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 const faceMesh = new window.FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
 hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6 });
-faceMesh.setOptions({ maxNumFaces: 3, refinerLandmarks: true, minDetectionConfidence: 0.6 });
+faceMesh.setOptions({ maxNumFaces: 1, refinerLandmarks: true, minDetectionConfidence: 0.6 });
 
 const mapCoord = (l) => new THREE.Vector3((l.x - 0.5) * -30.0, -(l.y - 0.5) * 30.0, l.z * 30.0);
 const lerpVec3 = (v1, v2, a) => new THREE.Vector3().copy(v1).lerp(v2, a);
 
+// --- NEW: GENERATE FINGERPRINT VISUAL ---
+function drawDigitalPrint() {
+    fingerCtx.clearRect(0, 0, 80, 100);
+    fingerCtx.strokeStyle = "#00ffff";
+    fingerCtx.lineWidth = 1.5;
+    
+    // Draw sci-fi rings
+    for (let r = 5; r < 40; r += 3) {
+        fingerCtx.beginPath();
+        let start = Math.random();
+        let end = Math.PI * 2 - Math.random();
+        fingerCtx.arc(40, 50, r, start, end);
+        fingerCtx.stroke();
+    }
+    
+    // Core
+    fingerCtx.beginPath();
+    fingerCtx.arc(40, 50, 2, 0, Math.PI*2);
+    fingerCtx.fillStyle = "#00ffff";
+    fingerCtx.fill();
+}
+
+function checkFingerprint(landmarks) {
+    if(!landmarks || isVerified) return; // Stop checking if verified
+
+    const tip = landmarks[8];
+    // Video is mirrored. X: 0.05 to 0.25 | Y: 0.6 to 0.9
+    const inBox = (tip.x < 0.25 && tip.x > 0.05 && tip.y > 0.6 && tip.y < 0.9);
+
+    if (inBox) {
+        if (!isFingerLocked) {
+            isFingerLocked = true;
+            fingerScanner.classList.add('active');
+            scanBeam.style.animation = 'scan-move 1s infinite linear';
+            fingerStatus.innerText = "SCANNING...";
+            SoundFX.scan();
+        }
+
+        scanTimer++;
+        if (scanTimer % 10 === 0) SoundFX.process();
+
+        if (scanTimer > 60) { // Verified!
+            isVerified = true;
+            fingerStatus.innerText = "MATCH FOUND";
+            fingerStatus.style.color = "#00ffff";
+            sqlLog("AUTH: BIOMETRIC MATCH [ID:9924-A]");
+            SoundFX.lock();
+            
+            // SHOW THE PRINT
+            drawDigitalPrint();
+            fingerCanvas.classList.add('revealed');
+            
+            // Hide beam
+            scanBeam.style.opacity = 0;
+            scanBeam.style.animation = 'none';
+
+            // Reset after 3 seconds
+            setTimeout(() => {
+                isVerified = false;
+                scanTimer = 0;
+                fingerCanvas.classList.remove('revealed');
+                fingerStatus.innerText = "PLACE FINGER";
+                fingerStatus.style.color = "#00ff88";
+                scanBeam.style.opacity = "";
+            }, 3000);
+        }
+    } else {
+        isFingerLocked = false;
+        scanTimer = 0;
+        fingerScanner.classList.remove('active');
+        scanBeam.style.animation = 'none';
+        fingerStatus.innerText = "PLACE FINGER";
+        fingerStatus.style.color = "#00ff88";
+    }
+}
+
+faceMesh.onResults((results) => { lastFaceMeshResults = results; });
+
 hands.onResults((results) => {
     canvasCtx.save(); canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    // Draw Face
+    if (lastFaceMeshResults && lastFaceMeshResults.multiFaceLandmarks) {
+        lastFaceMeshResults.multiFaceLandmarks.forEach(lm => {
+            window.drawConnectors(canvasCtx, lm, window.FACEMESH_TESSELATION, {color: '#00FFFF30', lineWidth: 0.5});
+            window.drawConnectors(canvasCtx, lm, window.FACEMESH_RIGHT_EYE, {color: activeColor.hex, lineWidth: 1});
+            window.drawConnectors(canvasCtx, lm, window.FACEMESH_LEFT_EYE, {color: activeColor.hex, lineWidth: 1});
+        });
+    }
+
+    // Draw Hands
     if (results.multiHandLandmarks) {
         results.multiHandLandmarks.forEach(lm => window.drawConnectors(canvasCtx, lm, window.HAND_CONNECTIONS, {color: activeColor.hex, lineWidth: 2}));
     }
+
+    // Fingerprint Logic
+    if (results.multiHandLandmarks.length > 0) {
+        checkFingerprint(results.multiHandLandmarks[0]);
+    } else if (!isVerified) {
+        isFingerLocked = false;
+        fingerScanner.classList.remove('active');
+        scanBeam.style.animation = 'none';
+    }
+
+    // Particles
     if (results.multiHandLandmarks.length > 0) {
         const pinch = Math.hypot(results.multiHandLandmarks[0][4].x - results.multiHandLandmarks[0][8].x, results.multiHandLandmarks[0][4].y - results.multiHandLandmarks[0][8].y);
         if (pinch < 0.08) { material.uniforms.uColor.value.lerp(new THREE.Color(1.0, 0.2, 0.0), 0.1); activeColor.hex = '#FF3300'; }
@@ -198,13 +311,11 @@ hands.onResults((results) => {
             });
         });
         for(let k=pIdx; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0;
-    } else { 
-        for(let k=0; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0; 
-    }
+    } else { for(let k=0; k<TOTAL_PARTICLES; k++) targetVisibility[k]=0.0; }
     canvasCtx.restore();
 });
 
-// --- FACE LOGIC ---
+// --- FACE API ---
 async function runBiometrics() {
     if (!video.videoWidth) return;
     const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks(true).withFaceDescriptors().withAgeAndGender();
@@ -214,7 +325,6 @@ async function runBiometrics() {
         return; 
     }
     vitalsPanel.style.display = 'block';
-    
     if(Math.random() > 0.8) sqlLog(`SELECT * FROM subjects WHERE descriptor MATCH '${detections[0].descriptor.slice(0,5)}...'`);
     
     hudContainer.innerHTML = '';
@@ -254,8 +364,11 @@ async function init() {
         faceapi.nets.ageGenderNet.loadFromUri(modelUrl)
     ]);
     if (knownFaces.length > 0) {
-        const labeledDescriptors = knownFaces.map(r => new faceapi.LabeledFaceDescriptors(r.label, [new Float32Array(Object.values(r.descriptor))]));
-        faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+        const validRecords = knownFaces.filter(r => r.descriptor && r.label);
+        if (validRecords.length > 0) {
+            const labeledDescriptors = validRecords.map(r => new faceapi.LabeledFaceDescriptors(r.label, [new Float32Array(Object.values(r.descriptor))]));
+            faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+        }
     }
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
     video.srcObject = stream;
@@ -291,6 +404,7 @@ async function startAILoop() {
         if (video.readyState >= 2 && !isScanning) {
             isScanning = true;
             await hands.send({image: video}); 
+            await faceMesh.send({image: video});
             await runBiometrics();
             isScanning = false;
         }
@@ -298,7 +412,6 @@ async function startAILoop() {
     }
 }
 
-// --- UTILS ---
 let ecgX = 0, lastBeat = 0;
 function updateHealthMonitor(isLocked) {
     let desired = isLocked ? 72 : 110; desired += (Math.random() - 0.5) * 5;
@@ -319,7 +432,6 @@ function updateHealthMonitor(isLocked) {
     if (ecgX > ecgCanvas.width) { ecgX = 0; ecgCtx.clearRect(0, 0, ecgCanvas.width, ecgCanvas.height); }
 }
 
-// --- EVENTS ---
 recBtn.onclick = () => { if(currentFaceDescriptor) { modal.classList.remove('modal-hidden'); nameInput.focus(); }};
 const validate = () => { if(nameInput.value && consentCheck.checked) { saveBtn.disabled=false; saveBtn.classList.add('active'); } else { saveBtn.disabled=true; saveBtn.classList.remove('active'); }};
 nameInput.oninput = validate; consentCheck.onchange = validate;
